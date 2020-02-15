@@ -1,108 +1,498 @@
 
-T <- 2
-CT <- 3
+::HSMaker <- EntityGroup[0]
 
-FindPlayers <- function(current, team = 0)
+// primary
+::WEP_M16 <- "weapon_galilar"
+::WEP_HUGE <- "weapon_m249"
+::WEP_MAC10 <- "weapon_mac10"
+::WEP_RIFLE <- "weapon_ssg08"
+::WEP_SHOTGUN <- "weapon_xm1014"
+
+// secondary
+::WEP_GLOCK <- "weapon_glock"
+::WEP_PISTOL <- "weapon_tec9"
+::WEP_DEAGLE <- "weapon_deagle"
+
+// nades
+::WEP_FRAG <- "weapon_hegrenade"
+::WEP_SMOKE <- "weapon_smokegrenade"
+::WEP_FLASHBANG <- "weapon_flashbang"
+
+::WEPLIST <- ["m16", "huge", "mac10", "rifle", "shotgun", "deagle", "pistol", "glock"]
+
+::ClampValue <- function(val, min, max)
 {
-	ply <- null
-	while ((ply = Entities.FindByClassname("*", current)) != null)
+	if (val > max)
 	{
-		local cls = ply.GetClassname()
-		if (cls == "player" || cls == "bot" && (team == 0 || ply.GetTeam() == team))
-		{
-			break
-		}
+		return max
 	}
-	return ply
+	if (val < min)
+	{
+		return min
+	}
+	return val
 }
 
-GetAllPlayers <- function(mustBeAlive = false)
+::EntFireHandle <- function(target, input, value = "", delay = 0.0, activator = null, caller = null)
 {
-	plys <- []
-	ply <- null
-	while ((ply = FindPlayers(ply)) != null)
-	{
-		if (!mustBeAlive || ply.GetHealth() > 0)
-		{
-			plys.push(ply)
-		}
-	}
-	return plys
+	EntFireByHandle(target, input, value, delay, activator, caller)
 }
 
-PlayerCount <- function()
+::CenterPrint <- function(ply, msg)
 {
-	count <- 0
-	ply <- null
-	while ((ply = FindPlayers(ply)) != null)
+	local messager = Entities.CreateByClassname("env_message")
+	messager.__KeyValueFromString("message", msg)
+	EntFireByHandle(messager, "ShowMessage", "", 0.0, ply, null)
+	EntFireByHandle(messager, "Kill", "", 0.1, null, null)
+}
+
+::CenterPrintTest <- function(ply, msg)
+{
+	local messager = Entities.CreateByClassname("game_text")
+	messager.__KeyValueFromString("message", msg)
+	messager.__KeyValueFromString("color", "100 100 100")
+	messager.__KeyValueFromString("color2", "240 110 0")
+	messager.__KeyValueFromInt("x", -1)
+	messager.__KeyValueFromInt("y", -1)
+	messager.__KeyValueFromInt("effect", 0)
+	messager.__KeyValueFromInt("channel", 1)
+	EntFireByHandle(messager, "Display", "", 0.0, ply, null)
+	EntFireByHandle(messager, "Kill", "", 0.1, null, null)
+}
+
+::GiveWeapon <- function(ply, weapon, ammo = 999)
+{
+	local equip = Entities.CreateByClassname("game_player_equip")
+	equip.__KeyValueFromInt("spawnflags", 1)
+	equip.__KeyValueFromInt(weapon, ammo)
+	EntFireByHandle(equip, "Use", "", 0.0, ply, null)
+	EntFireByHandle(equip, "Kill", "", 0.1, null, null)
+	ply.StopSound("Player.DamageKevlar")
+}
+
+::RefillAmmo <- function(ply)
+{
+	local ammo = Entities.CreateByClassname("point_give_ammo")
+	EntFireByHandle(ammo, "GiveAmmo", "", 0, ply, null)
+	EntFireByHandle(ammo, "Kill", "", 0.1, null, null)
+}
+
+::StripWeapons <- function(ply)
+{
+	local strip = Entities.CreateByClassname("player_weaponstrip")
+	EntFireByHandle(strip, "Strip", "", 0.0, ply, null)
+	EntFireByHandle(strip, "Kill", "", 0.1, null, null)
+}
+
+::GiveLoadout <- function(ply, array)
+{
+	local equip = Entities.CreateByClassname("game_player_equip")
+	equip.__KeyValueFromInt("spawnflags", 3)
+	equip.__KeyValueFromInt("item_assaultsuit", 1)
+	foreach (wep in array)
 	{
-		count++
+		equip.__KeyValueFromInt(wep, 999)
+	}
+	EntFireByHandle(equip, "Use", "", 0.0, ply, null)
+	EntFireByHandle(equip, "Kill", "", 0.1, null, null)
+}
+
+::ModifySpeed <- function(ply, speed)
+{
+	local speedmod = Entities.CreateByClassname("player_speedmod")
+	EntFireByHandle(speedmod, "ModifySpeed", speed.tostring(), 0.0, ply, null)
+	EntFireByHandle(speedmod, "Kill", "", 0.1, null, null)
+}
+
+::MeleeFixup <- function()
+{
+	foreach (wep in ["knife", "fists", "melee"])
+	{
+		EntFire("weapon_" + wep, "addoutput", "classname weapon_knifegg")
+	}
+}
+
+::INNOCENT <- 0
+::TRAITOR <- 1
+::DETECTIVE <- 2
+
+::ROLE_NAME <- ["innocent", "traitor", "detective"]
+
+::Alive <- function(ply) {return ply.GetHealth() > 0}
+::LivingPlayer <- function(ent) {return ent.GetClassname() == "player" && ent.GetHealth() > 0}
+::IsRole <- function(ply, role) {return GetRole(ply) == role}
+::SetRole <- function(ply, role) {ply.__KeyValueFromString("targetname", "player_" + ROLE_NAME[role])}
+
+::GetRole <- function(ply) {
+	switch (ply.GetName())
+	{
+		case "player_traitor":
+			return TRAITOR
+
+		case "player_detective":
+			return DETECTIVE
+
+		default:
+			return INNOCENT
+	}
+}
+
+::hs_timer <- 0
+::hud_timer <- 0
+::role_timer <- 0
+
+Think <- function()
+{
+	local fuck = true
+	local tac = null
+	while (tac = Entities.FindByClassname(tac, "tagrenade_projectile"))
+	{
+		if (tac.GetVelocity().Length() == 0 && fuck)
+		{
+			local owner = tac.GetOwner()
+			if (owner != null)
+			{
+				fuck = false
+				HSMaker.SpawnEntityAtLocation(tac.GetOrigin(), Vector(0, 0, 0))
+				tac.StopSound("Sensor.Activate")
+				tac.Destroy()
+				EntFire("health_station", "color", "100 100 255")
+			}
+		}
+	}
+	::hs_timer++
+	if (::hs_timer > 9)
+	{
+		::hs_timer <- 0
+		local hs = null
+		while (hs = Entities.FindByName(hs, "health_station"))
+		{
+			local ply = null
+			while (ply = Entities.FindByClassnameWithin(ply, "*", hs.GetOrigin(), 120))
+			{
+				if (LivingPlayer(ply) && TraceLine(hs.GetOrigin(), ply.GetOrigin() + Vector(0, 0, 20), hs) == 1)
+				{
+					local healing = ClampValue(5, 0, ply.GetMaxHealth() - ply.GetHealth())
+					ply.SetHealth(ply.GetHealth() + healing)
+				}
+			}
+		}
+	}
+	::hud_timer++
+	if (::hud_timer > 98)
+	{
+		::hud_timer <- 0
+		UpdateRoleHints()
+	}
+	if (PREPARING && !ScriptIsWarmupPeriod())
+	{
+		::role_timer++
+		if (::role_timer > 49 && GetPlayerCount() > 1)
+		{
+			AssignRoles()
+		}
+	}
+}
+
+::GetPlayerCount <- function(role = -1)
+{
+	local count = 0
+	local ply = null
+	while (ply = Entities.FindByClassname(ply, "*"))
+	{
+		if (ply.GetClassname() == "player" && (role == -1 || IsRole(ply, role)))
+		{
+			count++
+		}
 	}
 	return count
 }
 
-PlayerInGame <- function(ply)
+::GetLivingPlayerCount <- function(role = -1)
 {
-	local team = ply.GetTeam()
-	return team == T && team == CT
-}
-
-PrintTTT <- function(txt)
-{
-	ScriptPrintMessageChatAll("[TTT] " + txt)
-}
-
-SetRole <- function(ply, role)
-{
-	if (ply.ValidateScriptScope())
+	local count = 0
+	local ply = null
+	while (ply = Entities.FindByClassname(ply, "*"))
 	{
-		ply.GetScriptScope().ttt_role <- role
+		if (LivingPlayer(ply) && (role == -1 || IsRole(ply, role)))
+		{
+			count++
+		}
 	}
-	return role
+	return count
 }
 
-GetRole <- function(ply)
-{
-	if (ply.ValidateScriptScope())
-	{
-		local scope = ply.GetScriptScope()
-		return ("ttt_role" in scope) ? scope.ttt_role : SetRole(ply, "innocent")
-	}
-}
+::PREPARING <- true
+::ROUND_OVER <- false
+::ShowHintToPlayer <- function(ply, name) {EntFire("hud_" + name, "display", "", 0, ply)}
 
-EnableTTT <- function()
+::RoleHintMe <- function(ply)
 {
-	if (PlayerCount() < 3)
+	if (PREPARING)
 	{
-		PrintTTT("Not enough players to start a round...")
+		ShowHintToPlayer(ply, "preparing")
 		return
 	}
-
-	foreach (ply in GetAllPlayers())
+	if (ROUND_OVER)
 	{
-		SetRole(ply, "innocent")
+		ShowHintToPlayer(ply, "roundover")
+		return
 	}
-
-	SendToConsole("mp_teammates_are_enemies 1")
-
-	local traitorAmt = 1 + min(PlayerCount() / 4)
-
-	ent <- null
-	while ((ent = Entities.FindByName("game_playerdie", ent)) != null)
+	if (ply.GetHealth() < 1)
 	{
-		ent.Destroy()
+		ShowHintToPlayer(ply, "dead")
+		return
 	}
-
-	event <- Entities.CreateByClassname("trigger_brush")
-	event.__KeyValueFromString("targetname", "game_playerdie")
-	if (event.ValidateScriptScope())
+	switch (GetRole(ply))
 	{
-		event.GetScriptScope().OnUse <- function()
+		case TRAITOR:
+			ShowHintToPlayer(ply, "traitor")
+			break
+		case DETECTIVE:
+			ShowHintToPlayer(ply, "detective")
+			break
+		default:
+			ShowHintToPlayer(ply, "innocent")
+			break
+	}
+}
+
+::UpdateRoleHints <- function()
+{
+	EntFire("player_*", "RunScriptCode", "RoleHintMe(self)")
+}
+
+::PlayerDeath <- function(ply)
+{
+	if (!PREPARING && !ROUND_OVER)
+	{
+		if ((GetLivingPlayerCount(INNOCENT) + GetLivingPlayerCount(DETECTIVE)) < 1)
 		{
-			if (activator != null && GetRole(activator) == "traitor")
+			// traitors are technically "counter-terrorists"
+			EntFire("round_ender", "EndRound_CounterTerroristsWin", "15")
+			EntFire("hud_win_traitor", "display")
+			::ROUND_OVER <- true
+			UpdateRoleHints()
+		}
+		else if (GetLivingPlayerCount(TRAITOR) < 1)
+		{
+			EntFire("round_ender", "EndRound_TerroristsWin", "15")
+			EntFire("hud_win_innocent", "display")
+			::ROUND_OVER <- true
+			UpdateRoleHints()
+		}
+	}
+}
+
+::PlayerKilledPlayer <- function(victim, killer)
+{
+	printl("=== DEATH IN THE ROYALE FAMILY ===")
+	printl("=== Victim: " + victim)
+	printl("=== Killer: " + killer)
+	printl("=== T.O.D.: " + Time())
+	printl("=== TRAVELE IS MORE IMPORTANTE ===")
+
+	local vrole = GetRole(victim)
+	local krole = GetRole(killer)
+	if (vrole == krole && vrole != INNOCENT)
+	{
+		ScriptPrintMessageChatAll("0MG RDM!!!!!1!! SOMEONE CALL A ADMIN QUIZK!!!!")
+	}
+}
+
+::KnifeList <- ["bayonet", "knife_m9_bayonet", "knife_karambit", "knife_butterfly", "knife_flip"]
+::LAST_DEATH <- null
+
+::Debug_PrintRoles <- function()
+{
+	local ply = null
+	while (ply = Entities.Next(ply))
+	{
+		if (ply.GetClassname() == "player")
+		{
+			if (ply.GetHealth() > 0)
 			{
-				ScriptPrintMessageChatAll("Traitor died! Lmao!")
+				printl(ply)
+			}
+			else
+			{
+				printl(ply + " - DEAD")
 			}
 		}
 	}
 }
+
+::Debug_ModelTest <- function(mdl = "models/player/custom_player/legacy/tm_phoenix_varianta.mdl")
+{
+	local ent = null
+	while (ent = Entities.FindByModel(ent, mdl))
+	{
+		printl(ent)
+	}
+}
+
+::DETECTIVE_MODEL <- "models/player/custom_player/legacy/ctm_sas_varianta.mdl"
+::DETECTIVE_MIN_PLAYERS <- 4
+::MakeDetective <- function(ply)
+{
+	SetRole(ply, DETECTIVE)
+	ply.PrecacheModel(DETECTIVE_MODEL)
+	ply.SetModel(DETECTIVE_MODEL)
+	GiveWeapon(ply, "weapon_aug")
+	GiveWeapon(ply, "weapon_shield")
+	GiveWeapon(ply, "weapon_tagrenade")
+}
+
+::AssignRoles <- function()
+{
+	::PREPARING <- false
+	local plylist = []
+	local ply = null
+	while (ply = Entities.Next(ply))
+	{
+		if (ply.GetClassname() == "player")
+		{
+			plylist.push(ply)
+		}
+	}
+	local count = GetPlayerCount()
+	local traitor_amt = ClampValue(ceil(count * 0.25), 1, count - 1)
+	traitor_amt = 1 // TEMPORARY - No way to know your fellow traitors yet
+	do
+	{
+		local index = RandomInt(1, plylist.len()) - 1
+		SetRole(plylist[index], TRAITOR)
+		plylist.remove(index)
+		traitor_amt--
+	}
+	while (traitor_amt > 1)
+	if (count >= DETECTIVE_MIN_PLAYERS)
+	{
+		MakeDetective(plylist[RandomInt(1, plylist.len()) - 1])
+	}
+	UpdateRoleHints()
+	SendToConsoleServer("mp_respawn_on_death_t 0")
+	SendToConsoleServer("mp_respawn_on_death_ct 0")
+}
+
+::ColorList <- [["RED", "255 0 0"], ["ORANGE", "255 128 0"], ["YELLOW", "255 255 0"], ["GREEN", "0 255 0"], ["BLUE", "0 0 255"], ["MAGENTA", "255 0 255"], ["VIOLET", "128 0 255"], ["CYAN", "0 255 255"], ["GRAY", "128 128 128"]]
+::PlayerColors <- {}
+
+OnPostSpawn <- function()
+{
+	ScriptPrintMessageChatAll("• \x03 Welcome to TTT_ClintonBeach!")
+	ScriptPrintMessageChatAll("• \x03 Your roles are in the top left of your screen.")
+	ScriptPrintMessageChatAll("• \x03 TA Grenades place down health stations.")
+	ScriptPrintMessageChatAll("• \x03 Have fun!")
+	SendToConsoleServer("mp_autokick 0")
+	SendToConsoleServer("mp_roundtime 5")
+	SendToConsoleServer("mp_freezetime 0")
+	SendToConsoleServer("mp_forcecamera 0")
+	SendToConsoleServer("mp_limitteams 999")
+	SendToConsoleServer("mp_solid_teammates 1")
+	SendToConsoleServer("mp_autoteambalance 0")
+	SendToConsoleServer("mp_respawn_on_death_t 1")
+	SendToConsoleServer("mp_respawn_on_death_ct 1")
+	SendToConsoleServer("mp_teammates_are_enemies 1")
+	::ROUND_OVER <- false
+	::PREPARING <- true
+	local ply = null
+	while (ply = Entities.Next(ply))
+	{
+		if (ply.GetClassname() == "player")
+		{
+			EntFire("client_cmd", "Command", "cl_drawhud_force_deathnotices -1", 0, ply)
+			SetRole(ply, INNOCENT)
+			GiveWeapon(ply, "weapon_" + KnifeList[RandomInt(1, KnifeList.len()) - 1])
+			GiveWeapon(ply, "item_assaultsuit")
+		}
+	}
+	MeleeFixup()
+	UpdateRoleHints()
+	local wepspawn = null
+	while (wepspawn = Entities.FindByName(wepspawn, "ttt_weapon_spawn"))
+	{
+		local spawner = Entities.FindByName(null, "wepmaker_" + WEPLIST[RandomInt(1, WEPLIST.len()) - 1])
+		spawner.SpawnEntityAtEntityOrigin(wepspawn)
+	}
+	KillEvent <- Entities.CreateByClassname("trigger_brush")
+	KillEvent.__KeyValueFromString("targetname", "game_playerkill")
+	if (KillEvent.ValidateScriptScope())
+	{
+		KillEvent.ConnectOutput("OnUse", "OnKill")
+		KillEvent.GetScriptScope().OnKill <- function()
+		{
+			if (::LAST_DEATH != null)
+			{
+				// PlayerKilledPlayer(::LAST_DEATH, activator)
+				PlayerDeath(activator)
+			}
+		}
+	}
+	DeathEvent <- Entities.CreateByClassname("trigger_brush")
+	DeathEvent.__KeyValueFromString("targetname", "game_playerdie")
+	if (DeathEvent.ValidateScriptScope())
+	{
+		DeathEvent.ConnectOutput("OnUse", "OnDeath")
+		DeathEvent.GetScriptScope().OnDeath <- function()
+		{
+			::LAST_DEATH <- activator
+		}
+	}
+}
+
+/*
+
+::PrintTable <- function(tab, printfunc = printl, indent = "")
+{
+	foreach (k, v in tab)
+	{
+		if (typeof v == "table")
+		{
+			PrintTable(v, printfunc, indent + "   ");
+		}
+		else
+		{
+			printfunc(k + " = " + v)
+		}
+	}
+}
+
+if (!("PlayerNames" in getroottable()))
+{
+	::PlayerNames <- {}
+}
+
+::Event_Info <- function(data)
+{
+	printl("=== player_info ===")
+	PrintTable(data)
+}
+
+::Event_Connect <- function(data)
+{
+	printl("=== player_connect ===")
+	PrintTable(data)
+	PlayerNames[data.index] <- data.name
+}
+
+::Event_ConnectFull <- function(data)
+{
+	printl("=== player_connect_full ===")
+	PrintTable(data)
+}
+
+::gameevents_proxy <- Entities.CreateByClassname("info_game_event_proxy")
+::gameevents_proxy.__KeyValueFromString("targetname", "fuckme")
+::gameevents_proxy.__KeyValueFromString("event_name", "player_info")
+::gameevents_proxy.__KeyValueFromInt("range", 0)
+::gameevents_proxy2 <- Entities.CreateByClassname("info_game_event_proxy")
+::gameevents_proxy2.__KeyValueFromString("targetname", "fuckme2")
+::gameevents_proxy2.__KeyValueFromString("event_name", "player_connect")
+::gameevents_proxy2.__KeyValueFromInt("range", 0)
+::gameevents_proxy3 <- Entities.CreateByClassname("info_game_event_proxy")
+::gameevents_proxy3.__KeyValueFromString("targetname", "fuckme3")
+::gameevents_proxy3.__KeyValueFromString("event_name", "player_connect_full")
+::gameevents_proxy3.__KeyValueFromInt("range", 0)
+
+*/

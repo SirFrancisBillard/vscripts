@@ -1,46 +1,40 @@
 
-T <- 2
-CT <- 3
-VIP_MODEL <- "models/banana_haha.mdl"
+IncludeScript("util")
 
-FindPlayers <- function(current, team = 0)
+::VIP <- null
+::VIP_MODEL <- "models/player/custom_player/legacy/tm_phoenix_variantf.mdl"
+
+OnPostSpawn <- function()
 {
-	ply <- null
-	while ((ply = Entities.FindByClassname("*", current)) != null)
+	local terrorists = []
+	local ply = null
+	while (ply = Entities.Next(ply))
 	{
-		local cls = ply.GetClassname()
-		if (cls == "player" || cls == "bot" && (team == 0 || ply.GetTeam() == team))
+		if (ply.GetClassname() == "player")
 		{
-			break
-		}
-	}
-	return ply
-}
-
-EnableVIP <- function(team)
-{
-	PrecacheModel(VIP_MODEL)
-	VIP <- FindPlayers(team)
-	VIP.SetModel(VIP_MODEL)
-	VIP.__KeyValueFromString("targetname", "vip")
-
-	ent <- null
-	while ((ent = Entities.FindByName("game_playerdie", ent)) != null)
-	{
-		ent.Destroy()
-	}
-
-	event <- Entities.CreateByClassname("trigger_brush")
-	event.__KeyValueFromString("targetname", "game_playerdie")
-	if (event.ValidateScriptScope())
-	{
-		event.GetScriptScope().OnUse <- function()
-		{
-			if (activator != null && activator.GetName() == "vip")
+			GiveWeapon(ply, "item_assaultsuit")
+			if (ply.GetTeam() == 2)
 			{
-				activator.__KeyValueFromString("targetname", "not_vip_LUL")
-				ScriptPrintMessageChatAll("VIP died lul")
+				terrorists.push(ply)
+				GiveWeapons(ply, ["weapon_ak47", "weapon_glock", "weapon_knife_m9_bayonet"])
+			}
+			else
+			{
+				GiveWeapons(ply, ["weapon_m4a1", "weapon_p250", "weapon_bayonet"])
 			}
 		}
 	}
+	::VIP <- terrorists[RandomInt(0, terrorists.len() - 1)]
+	SetModelSafe(VIP, VIP_MODEL)
+	StripWeapons(VIP)
+	GiveWeapons(VIP, ["item_assaultsuit", "weapon_usp_silencer", "weapon_knife_karambit"])
+	MeleeFixup()
+	ChatPrintAll(" " + LIME + GetPlayerName(VIP) + WHITE + " is the VIP.")
+	HookToPlayerDeath(function(dead) {
+		if (dead == VIP)
+		{
+			ChatPrintAll(" " + DARK_RED + "The VIP has been killed!")
+			EntFire("round_end", "EndRound_CounterTerroristsWin", "7")
+		}
+	})
 }

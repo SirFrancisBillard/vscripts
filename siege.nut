@@ -48,8 +48,8 @@
 		{name = "Jager", weps = ["mp7", "hkp2000", "bayonet", "bumpmine", "tagrenade"], speed = 3, model = "tm_leet_varianti"},
 	],
 	[
-		{name = "Recruit", weps = ["sawedoff", "hkp2000", "knife_m9_bayonet", "hegrenade", "hegrenade"], speed = 2, model = "ctm_swat"},
-		{name = "Thatcher", weps = ["sg556", "cz75a", "knife_flip", "tagrenade"], speed = 2, model = "ctm_sas_variantf"},
+		{name = "Recruit", weps = ["sawedoff", "hkp2000", "knife_m9_bayonet", "flashbang", "flashbang", "flashbang"], speed = 2, model = "ctm_swat"},
+		{name = "Thatcher", weps = ["sg556", "cz75a", "knife_flip", "tagrenade", "tagrenade"], speed = 2, model = "ctm_sas_variantf"},
 		{name = "Thermite", weps = ["sg556", "fiveseven", "knife_m9_bayonet", "hegrenade", "hegrenade"], speed = 2, model = "ctm_st6_varianti"},
 		{name = "Montagne", weps = ["shield", "p250", "bayonet", "smokegrenade", "smokegrenade"], speed = 1, model = "ctm_heavy"},
 		{name = "Glaz", weps = ["scar20", "usp_silencer", "knife_survival_bowie", "smokegrenade", "smokegrenade"], speed = 2, model = "ctm_idf"},
@@ -128,116 +128,9 @@
 	return CLASS_RECRUIT
 }
 
-// shit function
-::ElectronicScanner <- function(ply, on)
-{
-	if (ply.GetHealth() > 0 && ply.ValidateScriptScope())
-	{
-		EntFire("fade_iq_" + (on ? "in" : "out"), "fade", 0, ply)
-		ply.GetScriptScope().iq_sensor <- on
-	}
-}
-
-// wall statuses: 0 is normal, 1 is reinforced, 2 is blown up
-::VecSum <- function(v) {return v.x + "-" + v.y + "-" + v.z}
-::WALL_STATUS <- {}
-::REINFORCE_PLY <- null
-::REINFORCE_INFO <- 0
-
-::PlayerReinforce <- function(ply)
-{
-	::REINFORCE_INFO <- 0
-	if (ply.ValidateScriptScope())
-	{
-		local ss = ply.GetScriptScope()
-		if (!("team_gadgets" in ss))
-		{
-			ply.GetScriptScope().team_gadgets <- 2
-		}
-		if (ss.team_gadgets > 0)
-		{
-			::REINFORCE_PLY <- ply
-			::REINFORCE_INFO <- ply.GetTeam() - 1
-		}
-	}
-}
-
-::Kaboom <- function(ent)
-{
-	DispatchParticleEffect("explosion_hegrenade_brief", ent.GetOrigin(), Vector(-1, 0, 0))
-	ent.EmitSound("BaseGrenade.Explode")
-}
-
-::ReinforcementPressed <- function(button)
-{
-	local button_pos = VecSum(button.GetOrigin())
-	if (REINFORCE_INFO == 1 && !(button_pos in WALL_STATUS))
-	{
-		local reinforcement = Entities.FindByNameNearest("reinforcement", button.GetOrigin(), 12)
-		if (reinforcement != null)
-		{
-			EntFireByHandle(reinforcement, "enable", "", 0.0, null, null)
-			reinforcement.EmitSound("Metal_Barrel.ImpactHard")
-			local wall = Entities.FindByNameNearest("breakable_*", button.GetOrigin(), 12)
-			if (wall != null)
-			{
-				EntFireByHandle(wall, "break", "", 0.0, null, null)
-			}
-			// reinforcing a wall breaks planted charges (except thermite)
-			local charge = Entities.FindByNameNearest("breach_planted", button.GetOrigin(), 18)
-			if (charge != null)
-			{
-				local owner = charge.GetOwner()
-				if (owner != null && GetClass(owner) != CLASS_THERMITE)
-				{
-					charge.Destroy()
-				}
-			}
-			REINFORCE_PLY.GetScriptScope().team_gadgets <- REINFORCE_PLY.GetScriptScope().team_gadgets - 1
-			::WALL_STATUS[button_pos] <- 1
-		}
-	}
-	else if (REINFORCE_INFO == 2 && (!(button_pos in WALL_STATUS) || WALL_STATUS[button_pos] != 2))
-	{
-		local jammer = Entities.FindByNameNearest("mute_jammer", button.GetOrigin(), 140)
-		if (jammer != null)
-		{
-			button.EmitSound("Buttons.snd8")
-			return
-		}
-		local charge_planted = false
-		local charge = Entities.FindByNameNearest("breach_planted", button.GetOrigin(), 12)
-		if (charge != null)
-		{
-			local wall = Entities.FindByNameNearest("breakable_*", button.GetOrigin(), 12)
-			if (wall != null)
-			{
-				charge_planted = true
-			}
-			else if (GetClass(REINFORCE_PLY) == CLASS_THERMITE)
-			{
-				local reinf = Entities.FindByNameNearest("reinforcement", button.GetOrigin(), 12)
-				if (reinf != null)
-				{
-					charge_planted = true
-				}
-			}
-		}
-		if (charge_planted)
-		{
-			EntFireHandle(charge, "enable")
-			charge.EmitSound("c4.plant")
-			charge.SetOwner(REINFORCE_PLY)
-			GiveWeapon(REINFORCE_PLY, "weapon_decoy")
-			REINFORCE_PLY.GetScriptScope().team_gadgets <- REINFORCE_PLY.GetScriptScope().team_gadgets - 1
-			::WALL_STATUS[button_pos] <- 2
-		}
-	}
-}
-
 ::HasCastleBarricades <- function(ply)
 {
-	if (GetClass(ply) == CLASS_CASTLE)
+	if (ply.GetHealth() > 0 && GetClass(ply) == CLASS_CASTLE)
 	{
 		local ss = ply.GetScriptScope()
 		if (!("castle_barricades" in ss))
@@ -256,7 +149,10 @@
 
 ::PlayerBarricade <- function(ply)
 {
-	::BARRICADE_PLAYER <- ply
+	if (ply.GetTeam() == DEFENDERS)
+	{
+		::BARRICADE_PLAYER <- ply
+	}
 }
 
 ::BarricadePressed <- function(door, dir = false)
@@ -266,56 +162,57 @@
 		local castlecade = Entities.FindByNameNearest("castle_barricade", door.GetOrigin(), 4)
 		if (castlecade == null)
 		{
-			local cade = Entities.FindByNameNearest("barricade", door.GetOrigin(), 4)
 			if (HasCastleBarricades(BARRICADE_PLAYER))
 			{
 				BARRICADE_PLAYER.GetScriptScope().castle_barricades--
 				CastleMaker.SpawnEntityAtLocation(door.GetOrigin(), Vector(0, dir ? 90 : 0, 0))
 				door.EmitSound("Wood_Crate.ImpactHard")
-				if (cade != null)
+				local cade = null
+				while (cade = Entities.FindByNameWithin(cade, "barricade", door.GetOrigin(), 4))
 				{
-					EntFireHandle(cade, "break")
+					EntFireHandle(cade, "enablemotion")
 				}
 			}
-			else if (cade == null)
+			else
 			{
-				BarricadeMaker.SpawnEntityAtLocation(door.GetOrigin(), Vector(0, dir ? 90 : 0, 0))
-				door.EmitSound("Wood.ImpactHard")
+				local cades = 0
+				local cade = null
+				while (cade = Entities.FindByNameWithin(cade, "barricade", door.GetOrigin(), 4))
+				{
+					cades++
+				}
+				printl("barricade count: " + cades)
+				if (cades < 5)
+				{
+					while (cade = Entities.FindByNameWithin(cade, "barricade", door.GetOrigin(), 4))
+					{
+						EntFireHandle(cade, "break")
+					}
+					BarricadeMaker.SpawnEntityAtLocation(door.GetOrigin(), Vector(0, dir ? 90 : 0, 0))
+					door.EmitSound("Wood.ImpactHard")
+					cade = null
+				}
 			}
 		}
 		::BARRICADE_PLAYER <- null
 	}
 }
 
-::DefenderOutside <- function(ply)
+::GoOutside <- function(ply)
 {
-	if (ply.GetTeam() == DEFENDERS && ply.ValidateScriptScope())
+	if (ply.ValidateScriptScope() && ply.GetTeam() == DEFENDERS)
 	{
 		local ss = ply.GetScriptScope()
-		if (!("outside_timer" in ss))
-		{
-			ss.outside_timer <- 3
-		}
-		ss.outside_timer--
-		if (ss.outside_timer > 0)
-		{
-			EntFire("hud_detectedoutside", "settext", "YOU WILL BE DETECTED IN 0:0" + ss.outside_timer)
-			EntFire("hud_detectedoutside", "display", "", 0, ply)
-		}
-		else
-		{
-			EntFire("hud_detectedoutside", "settext", "YOU HAVE BEEN DETECTED")
-			EntFire("hud_detectedoutside", "display", "", 0, ply)
-			local atker = null
-			while (atker = Entities.FindByClassname(atker, "player"))
-			{
-				if (atker.GetTeam() == ATTACKERS)
-				{
-					EntFire("hud_detectedoutside", "settext", "ENEMY DETECTED OUTSIDE")
-					EntFire("hud_detectedoutside", "display", "", 0, atker)
-				}
-			}
-		}
+		ss.went_outside <- Time()
+		ss.is_outside <- true
+	}
+}
+
+::GoBackInside <- function(ply)
+{
+	if (ply.ValidateScriptScope() && ply.GetTeam() == DEFENDERS)
+	{
+		ply.GetScriptScope().is_outside <- false
 	}
 }
 
@@ -339,6 +236,8 @@
 	EntFire("defender_blocker", "disable", "", 22)
 }
 
+::VecSum <- function(v) {return v.x + "-" + v.y + "-" + v.z}
+::WallStatus <- {}
 ::LAST_DEATH <- null
 
 OnPostSpawn <- function()
@@ -365,6 +264,50 @@ OnPostSpawn <- function()
 			ply.GetScriptScope().team_gadgets <- 2
 		}
 	}
+	local wall = null
+	while (wall = Entities.FindByName(wall, "reinforceable"))
+	{
+		if (wall.ValidateScriptScope())
+		{
+			wall.GetScriptScope().InputUse <- function()
+			{
+				if (activator.ValidateScriptScope() && activator.GetTeam() == DEFENDERS)
+				{
+					local ss = activator.GetScriptScope()
+					if (!("team_gadgets" in ss))
+					{
+						ss.team_gadgets <- 2
+					}
+					if (ss.team_gadgets > 0)
+					{
+						ss.team_gadgets--
+						local sum = VecSum(self.GetOrigin())
+						if (!(sum in WallStatus))
+						{
+							::WallStatus[sum] <- 0
+						}
+						if (WallStatus[sum] == 0)
+						{
+							local reinforcement = Entities.FindByNameNearest("reinforcement", self.GetOrigin(), 2)
+							if (reinforcement != null)
+							{
+								::WallStatus[sum] <- 1
+								EntFireHandle(reinforcement, "enable")
+								reinforcement.EmitSound("Metal_Barrel.ImpactHard")
+								local ent = null
+								while (ent = Entities.FindByNameWithin(ent, "reinforceable", self.GetOrigin(), 2))
+								{
+									EntFireHandle(ent, "enablemotion")
+									ent.SetVelocity(Vector(RandomInt(-80, 80), RandomInt(-80, 80), RandomInt(-10, 10)))
+								}
+							}
+						}
+					}
+				}
+				return false
+			}
+		}
+	}
 	KillEvent <- Entities.CreateByClassname("trigger_brush")
 	KillEvent.__KeyValueFromString("targetname", "game_playerkill")
 	if (KillEvent.ValidateScriptScope())
@@ -374,10 +317,7 @@ OnPostSpawn <- function()
 		{
 			if (::LAST_DEATH != null)
 			{
-				if (LAST_DEATH.GetTeam() == activator.GetTeam() && activator.ValidateScriptScope())
-				{
-					
-				}
+				EntFire("hud_hitmarker", "display", "", 0, activator)
 			}
 		}
 	}
@@ -403,16 +343,46 @@ OnPostSpawn <- function()
 ::ADSTargetList <- ["hegrenade", "flashbang", "smokegrenade", "tagrenade"]
 ::AngSum <- function(ang) {return floor(ang.x) + "-" + floor(ang.y) + "-" + floor(ang.z)}
 ::TICK_COUNT <- 0
+::THERMAL <- 0
+::ALREADY_MADE_TURRET <- false
 
 Think <- function()
 {
+	::THERMAL <- 0
 	::TICK_COUNT++
+	local defenders_outside = false
 	local deleted = []
 	local ent = null
 	while (ent = Entities.FindByClassname(ent, "*"))
 	{
 		if (ent.GetClassname() == "player" && ent.GetHealth() > 0)
 		{
+			if (ent.GetTeam() == DEFENDERS && TICK_COUNT % 5 == 0)
+			{
+				if (ent.ValidateScriptScope())
+				{
+					local ss = ent.GetScriptScope()
+					if (("is_outside" in ss) && ss.is_outside)
+					{
+						local time_outside = Time() - ss.went_outside
+						if (time_outside < 1)
+						{
+							EntFire("hud_detectedoutside", "settext", "YOU WILL BE DETECTED IN 0:02")
+						}
+						else if (time_outside < 2)
+						{
+							EntFire("hud_detectedoutside", "settext", "YOU WILL BE DETECTED IN 0:01")
+						}
+						else
+						{
+							defenders_outside = true
+							EntFire("hud_detectedoutside", "settext", "YOU ARE DETECTED")
+							DebugDrawBox(ent.EyePosition() + Vector(0, 0, 18), Vector(3, 3, 3), Vector(-3, -3, -3), 200, 150, 0, 150, 0.51)
+						}
+						EntFire("hud_detectedoutside", "display", "", 0, ent)
+					}
+				}
+			}
 			if (TICK_COUNT % 3 == 0 && ent.GetTeam() == ATTACKERS && ent.GetVelocity().Length() > 0)
 			{
 				local wire = Entities.FindByNameWithin(null, "razor_wire", ent.GetOrigin(), 30)
@@ -440,6 +410,11 @@ Think <- function()
 						txt = "BREACH CHARGES" + txt
 					}
 					EntFire("hud_teamgadgets", "settext", txt)
+					EntFire("hud_teamgadgets", "display", "", 0, ent)
+				}
+				else if (HasCastleBarricades(ent))
+				{
+					EntFire("hud_teamgadgets", "settext", "BARRICADES: " + ss.castle_barricades)
 					EntFire("hud_teamgadgets", "display", "", 0, ent)
 				}
 			}
@@ -476,6 +451,7 @@ Think <- function()
 			ang.y -= 3
 			ent.SetAngles(ang.x, ang.y, ang.z)
 		}
+		// NITRO CELL - UNUSED
 		else if (ent.GetName() == "nitro_cell")
 		{
 			if (ent.ValidateScriptScope())
@@ -484,14 +460,8 @@ Think <- function()
 				if (!("changed_model" in ss))
 				{
 					ss.changed_model <- true
-					printl("melleated!!!")
 				}
 			}
-		}
-		else if (ent.GetClassname() == "weapon_tablet")
-		{
-			// printl(ent.GetModelName())
-			// do sumfin
 		}
 		else if (ent.GetClassname() == "bumpmine_projectile")
 		{
@@ -549,7 +519,15 @@ Think <- function()
 						switch (GetClass(owner))
 						{
 							case CLASS_TACHANKA:
-								TurretMaker.SpawnEntityAtLocation(ent.GetOrigin(), Vector(0, 0, 0))
+								if (ALREADY_MADE_TURRET)
+								{
+									ScriptPrintMessageChatAll(" \x2 Due to engine limitations, there can only be one Tachanka turret at a time. Not sure how or why you put two of them, but sadly the technology just isn't there yet.")
+								}
+								else
+								{
+									::ALREADY_MADE_TURRET <- true
+									TurretMaker.SpawnEntityAtLocation(ent.GetOrigin(), Vector(0, 0, 0))
+								}
 								break
 
 							default:
@@ -620,6 +598,69 @@ Think <- function()
 			}
 			deleted.push(ent)
 		}
+		else if (TICK_COUNT % 6 == 0 && ent.GetClassname() == "predicted_viewmodel")
+		{
+			local ply = ent.GetMoveParent()
+			if (GetClass(ply) == CLASS_IQ && ent.GetModelName() == "models/weapons/v_pist_223.mdl")
+			{
+				local found_anything = false
+				local device = null
+				while (device = Entities.FindByClassnameWithin(device, "*", ply.EyePosition(), 100))
+				{
+					if (device.GetName() in ElectronicDevices || device.GetClassname() in ElectronicDevices)
+					{
+						DebugDrawBox(device.GetCenter(), device.GetBoundingMins(), device.GetBoundingMaxs(), 0, 200, 200, 80, 0.65)
+						found_anything = true
+					}
+				}
+				if (found_anything)
+				{
+					ent.EmitSound("Survival.BreachSoundActivate")
+				}
+			}
+			else if (GetClass(ply) == CLASS_GLAZ)
+			{
+				local ss = ply.GetScriptScope()
+				if (!("thermal" in ss))
+				{
+					ss.thermal <- 0
+				}
+				if (ent.GetModelName() == "models/weapons/v_snip_scar20.mdl")
+				{
+					if (ply.GetVelocity().Length() > 12)
+					{
+						ss.thermal--
+						if (ss.thermal < 0)
+						{
+							ss.thermal <- 0
+						}
+					}
+					else
+					{
+						ss.thermal++
+						if (ss.thermal > 4)
+						{
+							ss.thermal <- 4
+						}
+					}
+				}
+				else
+				{
+					ss.thermal <- 0
+				}
+				if (ss.thermal > THERMAL)
+				{
+					::THERMAL <- ss.thermal
+				}
+				local str = ""
+				for (local i = 0; i < ss.thermal; i++)
+				{
+					str += "|"
+				}
+				EntFire("hud_thermal", "settext", str + "                          " + str)
+				EntFire("hud_thermal", "display", "", 0, ply)
+			}
+		}
 	}
 	foreach (ent in deleted)
 	{
@@ -628,16 +669,41 @@ Think <- function()
 			ent.Destroy()
 		}
 	}
+	if (TICK_COUNT % 6 == 0)
+	{
+		local dfder = null
+		while (dfder = Entities.Next(dfder))
+		{
+			if (dfder.GetClassname() == "player" && dfder.GetTeam() == DEFENDERS)
+			{
+				dfder.__KeyValueFromString("rendercolor", "255 255 " + (255 - (::THERMAL * 60)))
+			}
+		}
+	}
+	if (defenders_outside)
+	{
+		local atker = null
+		while (atker = Entities.FindByClassname(atker, "player"))
+		{
+			if (atker.GetTeam() == ATTACKERS)
+			{
+				EntFire("hud_detectedoutside", "settext", "ENEMY DETECTED OUTSIDE")
+				EntFire("hud_detectedoutside", "display", "", 0, atker)
+			}
+		}
+	}
 }
 
-::BreakableGadgets <- {ads_base = true, ads_gun = true, mute_jammer = true}
+::ElectronicDevices <- {ads_base = true, mute_jammer = true, device_signal = true, breachcharge_projectile = true}
+::BreakableGadgets <- {ads_base = true, ads_gun = true, mute_jammer = true, mute_jammer_piece = true, breachcharge_projectile = true}
+
 ::DestroyGadgetsInRange <- function(pos, range)
 {
 	local deleted = []
 	local ent = null
 	while (ent = Entities.FindInSphere(ent, pos, range))
 	{
-		if (ent.GetName() in BreakableGadgets)
+		if (ent.GetName() in BreakableGadgets || ent.GetClassname() in BreakableGadgets)
 		{
 			ent.EmitSound("radio_computer.break")
 			deleted.push(ent)
@@ -658,60 +724,12 @@ Think <- function()
 	DestroyGadgetsInRange(pos, 6)
 }
 
-::ItemEquip <- function(data)
+::WireBroken <- function(ent)
 {
-	printl(data.item)
-}
-
-::LocalPlayer <- function()
-{
-	return Entities.FindByClassname(null, "player")
-}
-
-::TraceTest <- function(ply)
-{
-	local pos = ply.EyePosition()
-	local offset = ply.GetForwardVector() * 500
-	local tr = TraceLine(pos, pos + offset, null)
-	DebugDrawLine(pos, pos + (offset * tr), 0, 255, 0, true, 5)
-	DebugDrawLine(pos + (offset * tr), pos + (offset * tr) + (offset * (1 - tr)), 255, 0, 0, true, 5)
-}
-
-::TURRET_USER <- null
-
-::PlayerUsedTurret <- function(ply)
-{
-	::TURRET_USER <- ply
-}
-
-::TurretUsed <- function(turret)
-{
-	local ply = TURRET_USER
-	if (ply != null)
+	local wire = null
+	while (wire = Entities.FindByNameWithin(wire, "razor_wire", ent.GetOrigin(), 30))
 	{
-		printl(ply + " used turret!")
-		if (ply.ValidateScriptScope() && turret.ValidateScriptScope())
-		{
-			local ssp = ply.GetScriptScope()
-			local sst = turret.GetScriptScope()
-			if ("already_used" in sst)
-			{
-				
-			}
-			else
-			{
-				ssp.turret_prev <- [ply.GetHealth(), ply.GetOrigin(), ply.GetAngles()]
-			}
-		}
+		wire.Destroy()
 	}
-}
-
-::TurretEntered <- function(ply)
-{
-	
-}
-
-::TurretLeft <- function(ply)
-{
-	
+	EntFireHandle(ent, "break")
 }
